@@ -103,6 +103,46 @@ function AuthorizedResponderDashboard({ user }) {
   const [routingReportId, setRoutingReportId] = useState(null);
   const [routingMessages, setRoutingMessages] = useState({});
 
+  const analytics = reports.reduce(
+    (counts, report) => {
+      counts.totalReports += 1;
+      if (report.status === "Resolved") {
+        counts.resolvedReports += 1;
+      } else {
+        counts.activeReports += 1;
+      }
+
+      if (Object.hasOwn(counts.priorities, report.priority)) {
+        counts.priorities[report.priority] += 1;
+      }
+      if (Object.hasOwn(counts.categories, report.emergency_type)) {
+        counts.categories[report.emergency_type] += 1;
+      }
+      if (Object.hasOwn(counts.statuses, report.status)) {
+        counts.statuses[report.status] += 1;
+      }
+      return counts;
+    },
+    {
+      totalReports: 0,
+      activeReports: 0,
+      resolvedReports: 0,
+      priorities: { High: 0, Medium: 0, Low: 0 },
+      categories: {
+        "Medical Emergency": 0,
+        Accident: 0,
+        Fire: 0,
+        Other: 0,
+      },
+      statuses: {
+        Received: 0,
+        Assigned: 0,
+        "In Progress": 0,
+        Resolved: 0,
+      },
+    },
+  );
+
   useEffect(() => {
     const controller = new AbortController();
 
@@ -279,6 +319,60 @@ function AuthorizedResponderDashboard({ user }) {
         <h1>Responder Dashboard</h1>
         <p>Incoming emergency reports are listed below.</p>
       </div>
+
+      {loadState === "loaded" && (
+        <section className="responder-analytics" aria-label="Report analytics">
+          <div className="analytics-summary">
+            <div className="analytics-metric">
+              <span>Total Reports</span>
+              <strong>{analytics.totalReports}</strong>
+            </div>
+            <div className="analytics-metric">
+              <span>Active Reports</span>
+              <strong>{analytics.activeReports}</strong>
+            </div>
+            <div className="analytics-metric">
+              <span>Resolved Reports</span>
+              <strong>{analytics.resolvedReports}</strong>
+            </div>
+          </div>
+          <div className="analytics-breakdowns">
+            <div className="analytics-breakdown">
+              <h3>Priority</h3>
+              <dl>
+                {Object.entries(analytics.priorities).map(([priority, count]) => (
+                  <div key={priority}>
+                    <dt>{priority}</dt>
+                    <dd>{count}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="analytics-breakdown">
+              <h3>Emergency Categories</h3>
+              <dl>
+                {Object.entries(analytics.categories).map(([category, count]) => (
+                  <div key={category}>
+                    <dt>{category}</dt>
+                    <dd>{count}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="analytics-breakdown">
+              <h3>Status</h3>
+              <dl>
+                {Object.entries(analytics.statuses).map(([status, count]) => (
+                  <div key={status}>
+                    <dt>{status}</dt>
+                    <dd>{count}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="dashboard-section">
         <div className="section-title-row">
