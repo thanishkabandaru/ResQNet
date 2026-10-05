@@ -15,7 +15,12 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from authorization import check_responder_access, get_logged_in_user
 from database import get_db_connection, initialize_database
-from ml_models import predict_category, predict_priority
+from ml_models import (
+    predict_category,
+    predict_category_confidence,
+    predict_priority,
+    predict_priority_confidence,
+)
 
 app = Flask(__name__)
 @app.route("/")
@@ -263,6 +268,8 @@ def create_report():
         # Use ML models to predict category and priority from description
         ml_category = predict_category(description)
         ml_priority = predict_priority(description)
+        category_confidence = predict_category_confidence(description, ml_category)
+        priority_confidence = predict_priority_confidence(description, ml_priority)
 
         cursor = connection.execute(
             """
@@ -292,7 +299,9 @@ def create_report():
             "message": "Emergency report submitted successfully",
             "report_id": cursor.lastrowid,
             "predicted_category": ml_category,
+            "category_confidence": category_confidence,
             "predicted_priority": ml_priority,
+            "priority_confidence": priority_confidence,
             "priority_source": "ml",
         }
     ), 201
@@ -415,6 +424,8 @@ def create_report_with_image():
 
     ml_category = predict_category(description)
     ml_priority = predict_priority(description)
+    category_confidence = predict_category_confidence(description, ml_category)
+    priority_confidence = predict_priority_confidence(description, ml_priority)
     image_filename = f"{uuid.uuid4().hex}.jpg" if image_bytes is not None else None
     image_path = UPLOADS_DIRECTORY / image_filename if image_filename else None
     if image_path is not None:
@@ -475,7 +486,9 @@ def create_report_with_image():
             "status": "Received",
             "location_shared": latitude is not None,
             "predicted_category": ml_category,
+            "category_confidence": category_confidence,
             "predicted_priority": ml_priority,
+            "priority_confidence": priority_confidence,
             "priority_source": "ml",
         }
     ), 201
@@ -581,10 +594,23 @@ def get_responder_reports(user_id):
     finally:
         connection.close()
 
+    responder_reports = []
+    for report in reports:
+        report_data = dict(report)
+        report_data["category_confidence"] = predict_category_confidence(
+            report_data["description"],
+            report_data["emergency_type"],
+        )
+        report_data["priority_confidence"] = predict_priority_confidence(
+            report_data["description"],
+            report_data["priority"],
+        )
+        responder_reports.append(report_data)
+
     return jsonify(
         {
             "status": "success",
-            "reports": [dict(report) for report in reports],
+            "reports": responder_reports,
         }
     ), 200
 

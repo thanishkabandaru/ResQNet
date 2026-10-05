@@ -6,6 +6,7 @@ import pickle
 from collections import Counter
 from pathlib import Path
 
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
@@ -70,6 +71,8 @@ TRAINING_DATA = [
 
 _category_model = None
 _priority_model = None
+_category_confidence_model = None
+_priority_confidence_model = None
 
 
 def _new_priority_pipeline():
@@ -238,6 +241,60 @@ def predict_priority(description):
         raise ValueError("A non-empty description is required for priority prediction")
     _, priority_model = load_models()
     return priority_model.predict([description.strip()])[0]
+
+
+def _load_confidence_models():
+    """Fit cached cross-validated probability calibrators without changing predictions."""
+    global _category_confidence_model, _priority_confidence_model
+
+    if _category_confidence_model is None or _priority_confidence_model is None:
+        category_text = [item[0] for item in TRAINING_DATA]
+        category_labels = [item[1] for item in TRAINING_DATA]
+        priority_text, priority_labels = _read_priority_dataset()
+        category_model, priority_model = load_models()
+
+        if _category_confidence_model is None:
+            _category_confidence_model = CalibratedClassifierCV(
+                estimator=category_model,
+                method="sigmoid",
+                cv=5,
+            ).fit(category_text, category_labels)
+        if _priority_confidence_model is None:
+            _priority_confidence_model = CalibratedClassifierCV(
+                estimator=priority_model,
+                method="sigmoid",
+                cv=5,
+            ).fit(priority_text, priority_labels)
+
+    return _category_confidence_model, _priority_confidence_model
+
+
+def _class_confidence(calibrated_model, description, predicted_class):
+    classes = list(calibrated_model.classes_)
+    if predicted_class not in classes:
+        return None
+    probabilities = calibrated_model.predict_proba([description.strip()])[0]
+    return float(probabilities[classes.index(predicted_class)])
+
+
+def predict_category_confidence(description, predicted_category=None):
+    """Return calibrated probability for the unchanged category prediction."""
+    if not isinstance(description, str) or not description.strip():
+        raise ValueError("A non-empty description is required for classification")
+    if predicted_category is None:
+        predicted_category = predict_category(description)
+    category_calibrator, _ = _load_confidence_models()
+    return _class_confidence(category_calibrator, description, predicted_category)
+
+
+def predict_priority_confidence(description, predicted_priority=None):
+    """Return calibrated probability for the unchanged priority prediction."""
+    if not isinstance(description, str) or not description.strip():
+        raise ValueError("A non-empty description is required for priority prediction")
+    if predicted_priority is None:
+        predicted_priority = predict_priority(description)
+    _, priority_calibrator = _load_confidence_models()
+    return _class_confidence(priority_calibrator, description, predicted_priority)
 
 
 load_models()

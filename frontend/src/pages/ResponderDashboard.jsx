@@ -39,6 +39,12 @@ function hasValidLocation(latitude, longitude) {
   );
 }
 
+function formatConfidence(confidence) {
+  return Number.isFinite(confidence) && confidence >= 0 && confidence <= 1
+    ? `${Math.round(confidence * 100)}%`
+    : "Unavailable";
+}
+
 function distanceInKilometres(latitude, longitude, destination) {
   const radians = (degrees) => (degrees * Math.PI) / 180;
   const latitudeDifference = radians(destination.latitude - latitude);
@@ -311,6 +317,7 @@ function AuthorizedResponderDashboard({ user }) {
                   <p><strong>User-selected type:</strong> {report.reported_emergency_type}</p>
                 )}
                 <p><strong>Emergency Type (ML Classification):</strong> {report.emergency_type}</p>
+                <p><strong>Category confidence:</strong> {formatConfidence(report.category_confidence)}</p>
                 <p><strong>Description:</strong> {report.description}</p>
                 <h4>Evidence Photo</h4>
                 {report.image_attached ? (
@@ -332,6 +339,7 @@ function AuthorizedResponderDashboard({ user }) {
                   </strong>{" "}
                   {report.priority}
                 </p>
+                <p><strong>Priority confidence:</strong> {formatConfidence(report.priority_confidence)}</p>
                 <p><strong>Status:</strong> {report.status}</p>
                 <p>
                   <strong>Location:</strong>{" "}

@@ -8,11 +8,14 @@ from app import app
 from database import get_db_connection, initialize_database
 from ml_models import (
     PRIORITY_LABELS,
+    _load_confidence_models,
     _read_priority_dataset,
     evaluate_priority_model,
     load_models,
     predict_category,
+    predict_category_confidence,
     predict_priority,
+    predict_priority_confidence,
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import LinearSVC
@@ -63,6 +66,38 @@ class PriorityModelTests(unittest.TestCase):
             predict_category("multiple vehicles collided on the highway"),
             "Accident",
         )
+
+    def test_calibrated_confidence_uses_existing_model_labels(self):
+        cases = (
+            (
+                "chest pain and shortness of breath",
+                predict_category,
+                predict_category_confidence,
+            ),
+            (
+                "Person is unconscious and unable to breathe after collapsing",
+                predict_priority,
+                predict_priority_confidence,
+            ),
+        )
+        for description, predict, predict_confidence in cases:
+            with self.subTest(predictor=predict.__name__):
+                prediction = predict(description)
+                confidence = predict_confidence(description, prediction)
+                category_calibrator, priority_calibrator = _load_confidence_models()
+                calibrated_model = (
+                    category_calibrator
+                    if predict is predict_category
+                    else priority_calibrator
+                )
+                expected_confidence = calibrated_model.predict_proba([description])[0][
+                    list(calibrated_model.classes_).index(prediction)
+                ]
+                self.assertIsInstance(confidence, float)
+                self.assertGreaterEqual(confidence, 0)
+                self.assertLessEqual(confidence, 1)
+                self.assertAlmostEqual(confidence, expected_confidence)
+                self.assertEqual(predict(description), prediction)
 
 
 class ReportPriorityIntegrationTests(unittest.TestCase):
@@ -245,6 +280,10 @@ class ReportPriorityIntegrationTests(unittest.TestCase):
             self.assertEqual(
                 submitted_data["predicted_priority"], expected_priority
             )
+            self.assertGreaterEqual(submitted_data["category_confidence"], 0)
+            self.assertLessEqual(submitted_data["category_confidence"], 1)
+            self.assertGreaterEqual(submitted_data["priority_confidence"], 0)
+            self.assertLessEqual(submitted_data["priority_confidence"], 1)
             self.assertEqual(submitted_data["priority_source"], "ml")
             created_reports[expected_priority] = submitted_data["report_id"]
 
@@ -324,6 +363,10 @@ class ReportPriorityIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(report["priority"], "High")
         self.assertEqual(report["priority_source"], "ml")
+        self.assertGreaterEqual(report["category_confidence"], 0)
+        self.assertLessEqual(report["category_confidence"], 1)
+        self.assertGreaterEqual(report["priority_confidence"], 0)
+        self.assertLessEqual(report["priority_confidence"], 1)
         self.assertEqual((report["latitude"], report["longitude"]), (12.34, 56.78))
 
         invalid_skip = responder_client.patch(

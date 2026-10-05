@@ -76,6 +76,10 @@ class EvidencePhotoTests(unittest.TestCase):
         self.assertNotIn("latitude", photo_result)
         self.assertNotIn("longitude", photo_result)
         self.assertEqual(photo_result["predicted_category"], "Fire")
+        self.assertGreaterEqual(photo_result["category_confidence"], 0)
+        self.assertLessEqual(photo_result["category_confidence"], 1)
+        self.assertGreaterEqual(photo_result["priority_confidence"], 0)
+        self.assertLessEqual(photo_result["priority_confidence"], 1)
         self.assertEqual(photo_result["priority_source"], "ml")
 
         without_photo = self.submit_report(
