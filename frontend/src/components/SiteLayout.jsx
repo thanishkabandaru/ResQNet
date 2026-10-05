@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 function getStoredUser() {
   try {
@@ -56,7 +56,7 @@ function SiteLayout() {
           </Link>
 
           <nav className="main-nav" aria-label="Main navigation">
-            <NavLink to="/">Home</NavLink>
+            {!user && <NavLink to="/">Home</NavLink>}
             <NavLink to="/report">Report Emergency</NavLink>
             <NavLink to="/dashboard">My Dashboard</NavLink>
             {canAccessResponder && <NavLink to="/responder">Responder</NavLink>}
@@ -80,7 +80,14 @@ function SiteLayout() {
       </header>
 
       {logoutError && <p className="content-width form-message error" role="alert">{logoutError}</p>}
-      <Outlet />
+      {location.pathname === "/" && user ? (
+        <Navigate
+          to={canAccessResponder ? "/responder" : "/dashboard"}
+          replace
+        />
+      ) : (
+        <Outlet />
+      )}
 
       <footer className="site-footer">
         <div className="content-width footer-inner">
