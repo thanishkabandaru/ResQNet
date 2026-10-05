@@ -1,0 +1,19 @@
+.report-map {
+  width: 100%;
+  height: 240px;
+  margin: 10px 0 18px;
+  overflow: hidden;
+  border: 1px solid #e2e9ee;
+  border-radius: 7px;
+}
+
+.report-map .leaflet-container {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 620px) {
+  .report-map {
+    height: 200px;
+  }
+}

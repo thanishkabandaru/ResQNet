@@ -1,0 +1,77 @@
+.evidence-photo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 2px 0 20px;
+  padding: 15px;
+  border: 1px solid #e2e9ee;
+  border-radius: 7px;
+  background: #fafcfd;
+}
+
+.evidence-photo-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 5px 12px;
+  color: #30495a;
+  font-size: 12px;
+}
+
+.evidence-photo-heading span,
+.evidence-photo-message {
+  color: #82919c;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.evidence-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.evidence-photo-actions .button,
+.evidence-photo-preview .button {
+  min-height: 37px;
+  padding-inline: 13px;
+  font-size: 11px;
+}
+
+.evidence-photo-input {
+  display: none;
+}
+
+.evidence-photo-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.evidence-photo-preview img {
+  width: min(100%, 320px);
+  max-height: 240px;
+  border: 1px solid #e2e9ee;
+  border-radius: 6px;
+  object-fit: contain;
+  background: white;
+}
+
+.evidence-camera video {
+  display: block;
+  width: min(100%, 480px);
+  max-height: 360px;
+  border-radius: 6px;
+  background: #102b3f;
+  object-fit: contain;
+}
+
+.evidence-photo-message {
+  margin: 0;
+}
+
+.evidence-photo-message.error {
+  color: #a33232;
+}
