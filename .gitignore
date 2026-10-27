@@ -10,3 +10,7 @@ venv/
 backend/private_uploads/
 
 backend/resqnet.db
+.secret_key
+backend/.secret_key
+
+backend/resqnet.db.backup

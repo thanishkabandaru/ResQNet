@@ -1,0 +1,97 @@
+description,category
+A person has severe chest pain and difficulty breathing,Medical Emergency
+An unconscious patient is not breathing normally,Medical Emergency
+Heavy bleeding continues from a deep injury,Medical Emergency
+A child is choking and cannot breathe,Medical Emergency
+Facial swelling and wheezing indicate a severe allergic reaction,Medical Emergency
+Sudden weakness and slurred speech may be a stroke,Medical Emergency
+A person is having a prolonged seizure and needs urgent care,Medical Emergency
+A fall caused a painful fracture and the patient cannot move,Medical Emergency
+Several people are injured after two cars collided,Accident
+A pedestrian was struck by a vehicle at a crossing,Accident
+A motorcycle crashed and the rider is injured,Accident
+A truck rolled over and occupants are trapped inside,Accident
+A bicycle and car collided and the cyclist is hurt,Accident
+A bus crash left passengers injured on the highway,Accident
+A vehicle hit a barrier and the driver is trapped,Accident
+Multiple vehicles crashed in a pileup during heavy traffic,Accident
+Flames are spreading through a house with residents inside,Fire
+Smoke and fire are coming from an apartment building,Fire
+A kitchen fire is growing near the stove,Fire
+A wildfire is approaching homes at the edge of town,Fire
+A car is burning beside the road,Fire
+Flames are visible inside a commercial warehouse,Fire
+A fire has started in a crowded restaurant,Fire
+Thick smoke and flames are coming from a school building,Fire
+A deep pothole is damaging cars on the main road,Road Hazard
+A fallen tree is blocking both lanes of the street,Road Hazard
+The traffic lights are not working at a busy intersection,Road Hazard
+Construction debris is scattered across the highway,Road Hazard
+A sinkhole has opened in the roadway,Road Hazard
+An oil spill has made the road dangerously slippery,Road Hazard
+A damaged guardrail is hanging over the roadside,Road Hazard
+A road sign has fallen and is obstructing the driving lane,Road Hazard
+An assault is happening now and someone is being attacked,Crime
+A person is threatening people with a weapon in public,Crime
+Someone is breaking into an occupied home,Crime
+A violent fight outside the building needs police assistance,Crime
+A person is threatening a neighbor and refusing to leave,Crime
+Vandals are damaging cars in the parking area,Crime
+A person is forcing entry into a locked shop,Crime
+Someone is threatening a family during a domestic dispute,Crime
+A phone was stolen from a bag on the train,Theft
+Someone took a bicycle from the apartment entrance,Theft
+A shoplifter left the store with unpaid merchandise,Theft
+A parked car has been stolen from outside the house,Theft
+A wallet was taken from a passenger's pocket,Theft
+Packages were stolen from the front porch,Theft
+Copper wiring has been removed from the construction site,Theft
+A laptop was taken from an unattended office,Theft
+A young child has gone missing from the playground,Missing Person
+An elderly person with memory problems has wandered away,Missing Person
+A hiker has not returned and cannot be reached,Missing Person
+A teenager left home and has not been seen since yesterday,Missing Person
+A visitor became separated from their family at the station,Missing Person
+A child is missing near the crowded festival grounds,Missing Person
+An older adult left the care home and cannot be located,Missing Person
+A boater has not returned from the lake and is overdue,Missing Person
+Floodwater is rapidly rising through homes after heavy rain,Natural Disaster
+A strong earthquake is shaking buildings across the city,Natural Disaster
+A cyclone is approaching the coast with destructive winds,Natural Disaster
+A tornado has damaged homes and is moving toward town,Natural Disaster
+A landslide has covered farmland after days of rain,Natural Disaster
+A tsunami warning has been issued for the coastal area,Natural Disaster
+A severe storm has torn roofs from houses,Natural Disaster
+Volcanic ash is falling over nearby communities,Natural Disaster
+Part of an occupied apartment building has collapsed,Building Collapse
+A roof caved in and people may be trapped underneath,Building Collapse
+A bridge collapsed and vehicles are caught in the rubble,Building Collapse
+A wall has fallen onto people inside the building,Building Collapse
+Several floors of the structure collapsed after a loud crash,Building Collapse
+A ceiling collapsed in a crowded public hall,Building Collapse
+A building is crumbling and residents are trapped inside,Building Collapse
+Rubble from a collapsed structure is blocking the street,Building Collapse
+A fallen power line is sparking beside the sidewalk,Electrical Emergency
+An exposed live wire is hanging over the entrance,Electrical Emergency
+A transformer exploded and electrical wires are down,Electrical Emergency
+A person received an electric shock from a damaged appliance,Electrical Emergency
+An electrical panel is sparking in the building hallway,Electrical Emergency
+Several power cables have fallen across the roadway,Electrical Emergency
+A utility pole is leaning with live wires touching the ground,Electrical Emergency
+The electrical cabinet is making sparks and a burning smell,Electrical Emergency
+Residents smell natural gas leaking inside the house,Gas Leak
+A hissing gas pipe is leaking near the apartment entrance,Gas Leak
+A propane cylinder is leaking beside the restaurant kitchen,Gas Leak
+A strong gas odor is spreading through the building,Gas Leak
+Natural gas is escaping from a damaged street pipeline,Gas Leak
+A tanker is leaking gas near the fuel depot,Gas Leak
+The stove connection is leaking gas into the kitchen,Gas Leak
+People smell gas near the underground utility works,Gas Leak
+A water pipe burst and flooded the empty storage room,Other Emergency
+Someone is stranded and needs urgent assistance unrelated to injury,Other Emergency
+A large chemical container is leaking in the warehouse,Other Emergency
+A person is locked inside a stalled elevator and needs help,Other Emergency
+An animal is trapped in a drain after the storm,Other Emergency
+A water supply pipe has broken and is flooding the street,Other Emergency
+A boat is drifting unmanned near the public dock,Other Emergency
+An urgent emergency needs assistance but does not fit another category,Other Emergency

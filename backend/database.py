@@ -38,10 +38,49 @@ def initialize_database():
                     CHECK (priority_source IN ('default', 'ml')),
                 reported_emergency_type TEXT,
                 image_filename TEXT,
+                video_filename TEXT,
                 status TEXT NOT NULL DEFAULT 'Received',
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at DATETIME,
                 FOREIGN KEY (user_id) REFERENCES users (id)
             );
+
+            CREATE TABLE IF NOT EXISTS historical_dataset_imports (
+                id INTEGER PRIMARY KEY,
+                source TEXT NOT NULL,
+                dataset_name TEXT NOT NULL,
+                dataset_url TEXT NOT NULL,
+                geographic_level TEXT NOT NULL,
+                period_start TEXT,
+                period_end TEXT,
+                imported_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                import_method TEXT NOT NULL,
+                imported_record_count INTEGER NOT NULL CHECK (imported_record_count >= 0),
+                import_notes TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS government_historical_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                record_identifier TEXT NOT NULL UNIQUE,
+                source_name TEXT NOT NULL,
+                department TEXT NOT NULL,
+                dataset_title TEXT NOT NULL,
+                dataset_year INTEGER NOT NULL,
+                state TEXT,
+                district TEXT,
+                city TEXT,
+                geographic_level TEXT NOT NULL,
+                category TEXT NOT NULL,
+                metric TEXT NOT NULL,
+                value REAL NOT NULL,
+                unit TEXT NOT NULL DEFAULT 'count',
+                source_url TEXT NOT NULL,
+                license TEXT NOT NULL,
+                imported_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_gov_geo ON government_historical_data(geographic_level, state, city);
+            CREATE INDEX IF NOT EXISTS idx_gov_cat ON government_historical_data(category, metric);
             """
         )
         report_columns = {
@@ -66,6 +105,10 @@ def initialize_database():
             connection.execute(
                 "ALTER TABLE emergency_reports ADD COLUMN image_filename TEXT"
             )
+        if "video_filename" not in report_columns:
+            connection.execute(
+                "ALTER TABLE emergency_reports ADD COLUMN video_filename TEXT"
+            )
         if "route_department" not in report_columns:
             connection.execute(
                 "ALTER TABLE emergency_reports ADD COLUMN route_department TEXT"
@@ -73,6 +116,10 @@ def initialize_database():
         if "route_destination" not in report_columns:
             connection.execute(
                 "ALTER TABLE emergency_reports ADD COLUMN route_destination TEXT"
+            )
+        if "resolved_at" not in report_columns:
+            connection.execute(
+                "ALTER TABLE emergency_reports ADD COLUMN resolved_at DATETIME"
             )
         if "route_status" not in report_columns:
             connection.execute(

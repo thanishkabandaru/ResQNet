@@ -10,8 +10,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
-from sklearn.multiclass import OneVsRestClassifier
-from sklearn.pipeline import Pipeline
+from sklearn.pipeline import FeatureUnion, Pipeline
 from sklearn.svm import LinearSVC
 
 
@@ -20,54 +19,27 @@ ML_MODELS_DIR.mkdir(exist_ok=True)
 
 CATEGORY_MODEL_PATH = ML_MODELS_DIR / "category_model.pkl"
 PRIORITY_MODEL_PATH = ML_MODELS_DIR / "priority_model.pkl"
+CATEGORY_DATASET_PATH = (
+    Path(__file__).resolve().parent / "resqnet_category_training_data_2400.csv"
+)
 PRIORITY_DATASET_PATH = Path(__file__).resolve().parent / "priority_training_data.csv"
+CATEGORY_MODEL_VERSION = 3
 PRIORITY_MODEL_VERSION = 2
+CATEGORY_LABELS = (
+    "Medical Emergency",
+    "Accident",
+    "Fire",
+    "Road Hazard",
+    "Crime",
+    "Theft",
+    "Missing Person",
+    "Natural Disaster",
+    "Building Collapse",
+    "Electrical Emergency",
+    "Gas Leak",
+    "Other Emergency",
+)
 PRIORITY_LABELS = ("Low", "Medium", "High")
-
-TRAINING_DATA = [
-    ("chest pain and shortness of breath", "Medical Emergency", "High"),
-    ("person collapsed on ground", "Medical Emergency", "High"),
-    ("severe bleeding from injury", "Medical Emergency", "High"),
-    ("child unable to breathe", "Medical Emergency", "High"),
-    ("poison ingestion", "Medical Emergency", "High"),
-    ("diabetic patient unconscious", "Medical Emergency", "High"),
-    ("severe allergic reaction", "Medical Emergency", "High"),
-    ("broken bone from fall", "Medical Emergency", "Medium"),
-    ("person complaining of severe headache", "Medical Emergency", "Medium"),
-    ("high fever and difficulty breathing", "Medical Emergency", "Medium"),
-    ("minor cut on hand", "Medical Emergency", "Low"),
-    ("person feeling dizzy", "Medical Emergency", "Low"),
-    ("mild fever", "Medical Emergency", "Low"),
-    ("car crash on highway", "Accident", "High"),
-    ("two vehicle collision", "Accident", "High"),
-    ("pedestrian hit by vehicle", "Accident", "High"),
-    ("motorcycle accident", "Accident", "High"),
-    ("person trapped in vehicle", "Accident", "High"),
-    ("truck overturned on road", "Accident", "High"),
-    ("minor fender bender", "Accident", "Low"),
-    ("vehicle parked improperly", "Accident", "Low"),
-    ("traffic jam due to accident", "Accident", "Medium"),
-    ("bicycle accident on street", "Accident", "Medium"),
-    ("building on fire", "Fire", "High"),
-    ("house fire with people inside", "Fire", "High"),
-    ("fire in commercial building", "Fire", "High"),
-    ("wildfire spreading rapidly", "Fire", "High"),
-    ("smoke and flames coming from structure", "Fire", "High"),
-    ("fire in apartment complex", "Fire", "High"),
-    ("vehicle fire on road", "Fire", "High"),
-    ("small fire in kitchen", "Fire", "Medium"),
-    ("controlled burn", "Fire", "Low"),
-    ("robbery in progress", "Other", "High"),
-    ("person acting violently", "Other", "High"),
-    ("suspicious package", "Other", "High"),
-    ("missing person report", "Other", "High"),
-    ("armed individual sighted", "Other", "High"),
-    ("theft at store", "Other", "Medium"),
-    ("noise complaint", "Other", "Low"),
-    ("dog loose in neighborhood", "Other", "Low"),
-    ("damaged traffic light", "Other", "Low"),
-    ("litter on road", "Other", "Low"),
-]
 
 _category_model = None
 _priority_model = None
@@ -93,6 +65,30 @@ def _new_priority_pipeline():
             ),
         ]
     )
+
+
+def _read_category_dataset():
+    descriptions = []
+    categories = []
+    with CATEGORY_DATASET_PATH.open(encoding="utf-8", newline="") as dataset_file:
+        for row in csv.DictReader(dataset_file):
+            description = row["description"].strip()
+            category = row["category"].strip()
+            if not description or category not in CATEGORY_LABELS:
+                raise ValueError("Category dataset contains an empty description or invalid label")
+            descriptions.append(description)
+            categories.append(category)
+
+    counts = Counter(categories)
+    if len(descriptions) < len(CATEGORY_LABELS) * 5 or any(
+        counts[label] < 5 for label in CATEGORY_LABELS
+    ):
+        raise ValueError("Category dataset needs at least five examples for every category")
+    return descriptions, categories
+
+
+def _category_dataset_digest():
+    return hashlib.sha256(CATEGORY_DATASET_PATH.read_bytes()).hexdigest()
 
 
 def _read_priority_dataset():
@@ -169,25 +165,57 @@ def train_priority_model():
 
 def train_category_model():
     """Train and persist the existing emergency category classifier."""
-    descriptions = [item[0] for item in TRAINING_DATA]
-    categories = [item[1] for item in TRAINING_DATA]
+    descriptions, categories = _read_category_dataset()
     model = Pipeline(
         [
             (
                 "tfidf",
-                TfidfVectorizer(
-                    max_features=100, lowercase=True, stop_words="english"
+                FeatureUnion(
+                    [
+                        (
+                            "word",
+                            TfidfVectorizer(
+                                lowercase=True,
+                                stop_words="english",
+                                ngram_range=(1, 2),
+                                max_features=10000,
+                                sublinear_tf=True,
+                            ),
+                        ),
+                        (
+                            "character",
+                            TfidfVectorizer(
+                                analyzer="char_wb",
+                                ngram_range=(3, 5),
+                                min_df=2,
+                                max_features=20000,
+                                sublinear_tf=True,
+                            ),
+                        ),
+                    ]
                 ),
             ),
             (
                 "classifier",
-                OneVsRestClassifier(LinearSVC(random_state=42, max_iter=1000)),
+                LinearSVC(
+                    C=1.0,
+                    class_weight="balanced",
+                    random_state=42,
+                    max_iter=3000,
+                ),
             ),
         ]
     )
     model.fit(descriptions, categories)
     with CATEGORY_MODEL_PATH.open("wb") as model_file:
-        pickle.dump(model, model_file)
+        pickle.dump(
+            {
+                "version": CATEGORY_MODEL_VERSION,
+                "dataset_digest": _category_dataset_digest(),
+                "model": model,
+            },
+            model_file,
+        )
     return model
 
 
@@ -198,9 +226,19 @@ def load_models():
     if _category_model is None:
         try:
             with CATEGORY_MODEL_PATH.open("rb") as model_file:
-                _category_model = pickle.load(model_file)
+                saved_category_model = pickle.load(model_file)
         except FileNotFoundError:
+            saved_category_model = None
+
+        if (
+            not isinstance(saved_category_model, dict)
+            or saved_category_model.get("version") != CATEGORY_MODEL_VERSION
+            or saved_category_model.get("dataset_digest")
+            != _category_dataset_digest()
+        ):
             _category_model = train_category_model()
+        else:
+            _category_model = saved_category_model["model"]
 
     if _priority_model is None:
         try:
@@ -248,8 +286,7 @@ def _load_confidence_models():
     global _category_confidence_model, _priority_confidence_model
 
     if _category_confidence_model is None or _priority_confidence_model is None:
-        category_text = [item[0] for item in TRAINING_DATA]
-        category_labels = [item[1] for item in TRAINING_DATA]
+        category_text, category_labels = _read_category_dataset()
         priority_text, priority_labels = _read_priority_dataset()
         category_model, priority_model = load_models()
 

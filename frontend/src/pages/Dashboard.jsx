@@ -1,5 +1,31 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import ReportMap from "../components/ReportMap.jsx";
+
+function formatConfidence(confidence) {
+  const value = toFiniteNumber(confidence);
+  return value !== null && value >= 0 && value <= 1
+    ? `${Math.round(value * 100)}%`
+    : "Unavailable";
+}
+
+function toFiniteNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function formatReportDateTime(timestamp) {
+  const utcTimestamp = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(timestamp)
+    ? `${timestamp.replace(" ", "T")}Z`
+    : timestamp;
+  return new Date(utcTimestamp).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+  });
+}
 
 function getLoggedInUser() {
   try {
@@ -15,10 +41,26 @@ function getLoggedInUser() {
 }
 
 function Dashboard() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [user] = useState(getLoggedInUser);
   const [reports, setReports] = useState([]);
   const [loadState, setLoadState] = useState(user ? "loading" : "logged-out");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const userDisplayName =
+    (user?.name && user.name.trim()) ||
+    user?.email ||
+    (user?.id ? `User #${user.id}` : "User");
+
+  useEffect(() => {
+    if (location.hash === "#my-reports") {
+      const el = document.getElementById("my-reports");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+  }, [location.hash, loadState]);
 
   useEffect(() => {
     if (!user) {
@@ -36,6 +78,14 @@ function Dashboard() {
         const result = await response.json();
 
         if (!response.ok) {
+          if (response.status === 401) {
+            localStorage.removeItem("resqnetUser");
+            navigate("/login", {
+              replace: true,
+              state: { message: "Your session has expired. Please log in again." },
+            });
+            return;
+          }
           setErrorMessage(result.message || "Unable to load your emergency reports.");
           setLoadState("error");
           return;
@@ -60,15 +110,15 @@ function Dashboard() {
       <section className="dashboard-welcome">
         <div>
           <span className="eyebrow">User dashboard</span>
-          <h1>Welcome to your dashboard</h1>
-          <p>View the status and details of reports you have submitted.</p>
+          <h1>Welcome, {userDisplayName}</h1>
+          <p>Monitor your emergency reports and their current status.</p>
         </div>
         <Link className="button button-primary" to="/report">
           Report Emergency
         </Link>
       </section>
 
-      <section className="dashboard-section">
+      <section id="my-reports" className="dashboard-section">
         <div className="section-title-row">
           <div>
             <h2>My Emergency Reports</h2>
@@ -111,12 +161,10 @@ function Dashboard() {
             {reports.map((report) => (
               <article className="form-card report-card" key={report.id}>
                 <h3>Report #{report.id}</h3>
-                {report.reported_emergency_type && (
-                  <p><strong>Selected Emergency Type:</strong> {report.reported_emergency_type}</p>
-                )}
-                <p><strong>Emergency Type:</strong> {report.emergency_type}</p>
+                <p><strong>Emergency Category:</strong> {report.emergency_type}</p>
+                <p><strong>Category confidence:</strong> {formatConfidence(report.category_confidence)}</p>
                 <p><strong>Description:</strong> {report.description}</p>
-                <p><strong>Date/time:</strong> {new Date(report.created_at).toLocaleString()}</p>
+                <p><strong>Date/time:</strong> {formatReportDateTime(report.created_at)}</p>
                 <p>
                   <strong>
                     {report.priority_source === "ml"
@@ -125,15 +173,42 @@ function Dashboard() {
                   </strong>{" "}
                   {report.priority}
                 </p>
+                <p><strong>Priority confidence:</strong> {formatConfidence(report.priority_confidence)}</p>
                 <p><strong>Status:</strong> {report.status}</p>
                 <p>
                   <strong>Location shared:</strong>{" "}
                   {report.location_shared ? "Yes" : "No"}
                 </p>
+                <h4>Emergency Location</h4>
+                <ReportMap
+                  latitude={toFiniteNumber(report.latitude)}
+                  longitude={toFiniteNumber(report.longitude)}
+                />
                 <p>
                   <strong>Evidence photo:</strong>{" "}
                   {report.image_attached ? "Attached" : "No image attached"}
                 </p>
+                {report.image_attached && (
+                  <img
+                    className="responder-evidence-photo"
+                    src={`/api/reports/user/${user.id}/${report.id}/image`}
+                    alt={`Evidence photo for emergency report ${report.id}`}
+                    loading="lazy"
+                  />
+                )}
+                {report.video_attached && (
+                  <>
+                    <h4>Evidence video</h4>
+                    <video
+                      className="responder-evidence-photo"
+                      src={`/api/reports/user/${user.id}/${report.id}/video`}
+                      controls
+                      preload="metadata"
+                    >
+                      Your browser does not support video playback.
+                    </video>
+                  </>
+                )}
               </article>
             ))}
           </div>

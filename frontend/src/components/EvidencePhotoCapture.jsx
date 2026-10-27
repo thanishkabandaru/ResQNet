@@ -59,7 +59,7 @@ async function preparePhoto(file) {
   }
 }
 
-function EvidencePhotoCapture({ onPhotoChange }) {
+function EvidencePhotoCapture({ onPhotoChange, location }) {
   const fileInputRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -194,6 +194,63 @@ function EvidencePhotoCapture({ onPhotoChange }) {
       return;
     }
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const capturedAt = new Date();
+    const locationAge = capturedAt.getTime() - (location?.timestamp ?? Number.NaN);
+    const locationIsRecent = locationAge >= 0 && locationAge <= 5 * 60 * 1000;
+    const hasLocation =
+      Number.isFinite(location?.latitude) &&
+      Number.isFinite(location?.longitude) &&
+      Number.isFinite(location?.accuracy) &&
+      location.accuracy <= 50 &&
+      locationIsRecent &&
+      location.latitude >= -90 &&
+      location.latitude <= 90 &&
+      location.longitude >= -180 &&
+      location.longitude <= 180;
+    const padding = Math.max(12, Math.round(canvas.width * 0.025));
+    const fontSize = Math.max(11, Math.min(18, Math.round(canvas.width * 0.018)));
+    const lineHeight = fontSize + Math.max(5, Math.round(fontSize * 0.45));
+    const overlayHeight = padding * 2 + lineHeight * 3;
+    const gradient = context.createLinearGradient(
+      0,
+      canvas.height - overlayHeight,
+      0,
+      canvas.height,
+    );
+    gradient.addColorStop(0, "rgba(9, 24, 36, 0.18)");
+    gradient.addColorStop(0.3, "rgba(9, 24, 36, 0.88)");
+    gradient.addColorStop(1, "rgba(9, 24, 36, 0.94)");
+    context.fillStyle = gradient;
+    context.fillRect(0, canvas.height - overlayHeight, canvas.width, overlayHeight);
+    context.textBaseline = "top";
+    context.fillStyle = "#ffffff";
+    context.font = `700 ${fontSize}px Arial, sans-serif`;
+    context.fillText(
+      "RESQNET  ·  CAMERA EVIDENCE",
+      padding,
+      canvas.height - overlayHeight + padding,
+    );
+    context.font = `500 ${fontSize}px Arial, sans-serif`;
+    context.fillText(
+      `Device time ${capturedAt.toLocaleString("en-IN", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Asia/Kolkata",
+      })} IST`,
+      padding,
+      canvas.height - overlayHeight + padding + lineHeight,
+    );
+    context.fillText(
+      hasLocation
+        ? `GPS ±${Math.round(location.accuracy)} m  ·  ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
+        : location && !locationIsRecent
+          ? "GPS omitted · location fix is over five minutes old"
+          : Number.isFinite(location?.accuracy)
+            ? `GPS omitted · ${Math.round(location.accuracy)} m accuracy`
+          : "GPS not shared at capture",
+      padding,
+      canvas.height - overlayHeight + padding + lineHeight * 2,
+    );
     canvas.toBlob(
       async (blob) => {
         if (!blob) {
@@ -202,7 +259,7 @@ function EvidencePhotoCapture({ onPhotoChange }) {
         }
         const capturedPhoto = new File([blob], "camera-evidence.jpg", {
           type: "image/jpeg",
-          lastModified: Date.now(),
+          lastModified: capturedAt.getTime(),
         });
         await acceptPhoto(capturedPhoto);
       },
@@ -220,7 +277,7 @@ function EvidencePhotoCapture({ onPhotoChange }) {
     <div className="evidence-photo">
       <div className="evidence-photo-heading">
         <strong>Evidence photo</strong>
-        <span>Optional · JPEG or PNG · maximum 8 MB</span>
+        <span>Camera captures include time and shared GPS. Uploaded-photo dates and locations cannot be verified.</span>
       </div>
 
       {previewUrl && (
@@ -254,7 +311,7 @@ function EvidencePhotoCapture({ onPhotoChange }) {
       <div className="evidence-photo-actions">
         {!cameraStream && (
           <button className="button button-outline" type="button" onClick={openCamera}>
-            {photo ? "Retake photo" : "Open camera"}
+            {photo ? "Retake photo" : "Take Photo"}
           </button>
         )}
         <button

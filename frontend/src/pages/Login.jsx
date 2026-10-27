@@ -40,7 +40,11 @@ function Login() {
         role: result.user.role,
       };
       localStorage.setItem("resqnetUser", JSON.stringify(user));
-      navigate("/dashboard");
+      navigate(
+        user.role === "responder" || user.role === "admin"
+          ? "/responder"
+          : "/dashboard",
+      );
     } catch {
       setMessageType("error");
       setMessage("Unable to connect to ResQNet. Please try again.");

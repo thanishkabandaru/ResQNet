@@ -61,7 +61,7 @@ class EvidencePhotoTests(unittest.TestCase):
         finally:
             connection.close()
 
-    def test_multipart_reports_with_and_without_photo_keep_text_ml_and_private_gps(self):
+    def test_multipart_report_with_photo_keeps_text_ml_and_private_gps(self):
         with_photo = self.submit_report(
             image=self.png_upload(),
             latitude="12.34",
@@ -70,7 +70,6 @@ class EvidencePhotoTests(unittest.TestCase):
         self.assertEqual(with_photo.status_code, 201)
         photo_result = with_photo.get_json()
         self.assertTrue(photo_result["image_attached"])
-        self.assertEqual(photo_result["reported_emergency_type"], "Other")
         self.assertEqual(photo_result["emergency_type"], "Fire")
         self.assertEqual(photo_result["status"], "Received")
         self.assertNotIn("latitude", photo_result)
@@ -82,13 +81,11 @@ class EvidencePhotoTests(unittest.TestCase):
         self.assertLessEqual(photo_result["priority_confidence"], 1)
         self.assertEqual(photo_result["priority_source"], "ml")
 
-        without_photo = self.submit_report(
+        without_evidence = self.submit_report(
             description="A person is unconscious and unable to breathe"
         )
-        self.assertEqual(without_photo.status_code, 201)
-        self.assertFalse(without_photo.get_json()["image_attached"])
-        self.assertIn("predicted_category", without_photo.get_json())
-        self.assertIn("predicted_priority", without_photo.get_json())
+        self.assertEqual(without_evidence.status_code, 400)
+        self.assertIn("either a photo or a video", without_evidence.get_json()["message"])
 
         connection = get_db_connection()
         try:
@@ -104,12 +101,10 @@ class EvidencePhotoTests(unittest.TestCase):
             connection.close()
 
         self.assertEqual(reports[0]["emergency_type"], "Fire")
-        self.assertEqual(reports[0]["reported_emergency_type"], "Other")
+        self.assertIsNone(reports[0]["reported_emergency_type"])
         self.assertEqual((reports[0]["latitude"], reports[0]["longitude"]), (12.34, 56.78))
         self.assertRegex(reports[0]["image_filename"], r"^[a-f0-9]{32}\.jpg$")
         self.assertTrue((resqnet_app.UPLOADS_DIRECTORY / reports[0]["image_filename"]).is_file())
-        self.assertIsNone(reports[1]["image_filename"])
-        self.assertIsNone(reports[1]["latitude"])
         self.assertEqual(reports[0]["priority_source"], "ml")
 
         user_report = self.user_client.get(
@@ -119,10 +114,20 @@ class EvidencePhotoTests(unittest.TestCase):
             report for report in user_report if report["id"] == photo_result["report_id"]
         )
         self.assertTrue(user_report["image_attached"])
-        self.assertEqual(user_report["reported_emergency_type"], "Other")
+        self.assertIsNone(user_report["reported_emergency_type"])
         self.assertNotIn("image_filename", user_report)
-        self.assertNotIn("latitude", user_report)
-        self.assertNotIn("longitude", user_report)
+        self.assertEqual((user_report["latitude"], user_report["longitude"]), (12.34, 56.78))
+        self.assertGreaterEqual(user_report["category_confidence"], 0)
+        self.assertLessEqual(user_report["category_confidence"], 1)
+        self.assertGreaterEqual(user_report["priority_confidence"], 0)
+        self.assertLessEqual(user_report["priority_confidence"], 1)
+
+        user_image_response = self.user_client.get(
+            f"/api/reports/user/{self.user_id}/{photo_result['report_id']}/image"
+        )
+        self.assertEqual(user_image_response.status_code, 200)
+        self.assertEqual(user_image_response.mimetype, "image/jpeg")
+        user_image_response.close()
 
     def test_invalid_or_oversized_images_are_rejected(self):
         invalid_image = self.submit_report(
@@ -139,12 +144,121 @@ class EvidencePhotoTests(unittest.TestCase):
         )
         self.assertEqual(oversized_image.status_code, 413)
 
-    def test_bad_category_and_incomplete_location_are_rejected(self):
-        invalid_category = self.submit_report(emergency_type="Unlisted")
-        self.assertEqual(invalid_category.status_code, 400)
+        missing_location = self.submit_report(
+            image=self.png_upload(),
+            include_location=False,
+        )
+        self.assertEqual(missing_location.status_code, 201)
+        self.assertNotIn("latitude", missing_location.get_json())
+        self.assertNotIn("longitude", missing_location.get_json())
+        connection = get_db_connection()
+        try:
+            stored_report = connection.execute(
+                "SELECT latitude, longitude FROM emergency_reports WHERE id = ?",
+                (missing_location.get_json()["report_id"],),
+            ).fetchone()
+        finally:
+            connection.close()
+        self.assertIsNone(stored_report["latitude"])
+        self.assertIsNone(stored_report["longitude"])
 
-        incomplete_location = self.submit_report(latitude="12.34")
+    def test_video_upload_formats_size_choice_and_owner_retrieval(self):
+        for extension, mimetype in (
+            (".mp4", "video/mp4"),
+            (".webm", "video/webm"),
+            (".mov", "video/quicktime"),
+        ):
+            with self.subTest(extension=extension):
+                submitted = self.submit_report(
+                    video=(io.BytesIO(b"video evidence"), f"evidence{extension}", mimetype)
+                )
+                self.assertEqual(submitted.status_code, 201)
+                report_id = submitted.get_json()["report_id"]
+                self.assertTrue(submitted.get_json()["video_attached"])
+
+                connection = get_db_connection()
+                try:
+                    report = connection.execute(
+                        "SELECT video_filename FROM emergency_reports WHERE id = ?",
+                        (report_id,),
+                    ).fetchone()
+                finally:
+                    connection.close()
+                self.assertRegex(
+                    report["video_filename"],
+                    rf"^[a-f0-9]{{32}}{extension}$",
+                )
+                self.assertTrue(
+                    (resqnet_app.UPLOADS_DIRECTORY / report["video_filename"]).is_file()
+                )
+                user_report = next(
+                    item
+                    for item in self.user_client.get(
+                        f"/api/reports/user/{self.user_id}"
+                    ).get_json()["reports"]
+                    if item["id"] == report_id
+                )
+                self.assertTrue(user_report["video_attached"])
+
+                video_response = self.user_client.get(
+                    f"/api/reports/user/{self.user_id}/{report_id}/video"
+                )
+                self.assertEqual(video_response.status_code, 200)
+                self.assertEqual(video_response.mimetype, mimetype)
+                video_response.close()
+
+        self.assertEqual(
+            self.user_client.get(
+                f"/api/reports/user/{self.user_id + 1}/{report_id}/video"
+            ).status_code,
+            403,
+        )
+
+        oversized_video = self.submit_report(
+            video=(
+                io.BytesIO(b"x" * (resqnet_app.MAX_VIDEO_BYTES + 1)),
+                "large.mp4",
+                "video/mp4",
+            )
+        )
+        self.assertEqual(oversized_video.status_code, 413)
+
+        both_evidence_types = self.submit_report(
+            image=self.png_upload(),
+            video=(io.BytesIO(b"video evidence"), "evidence.mp4", "video/mp4"),
+        )
+        self.assertEqual(both_evidence_types.status_code, 400)
+
+        unsupported_video = self.submit_report(
+            video=(io.BytesIO(b"video evidence"), "evidence.avi", "video/x-msvideo")
+        )
+        self.assertEqual(unsupported_video.status_code, 400)
+
+    def test_category_is_predicted_without_user_selection_and_incomplete_location_is_rejected(self):
+        report = self.submit_report(image=self.png_upload())
+        self.assertEqual(report.status_code, 201)
+        self.assertIn(report.get_json()["predicted_category"], {
+            "Medical Emergency",
+            "Accident",
+            "Fire",
+            "Road Hazard",
+            "Crime",
+            "Theft",
+            "Missing Person",
+            "Natural Disaster",
+            "Building Collapse",
+            "Electrical Emergency",
+            "Gas Leak",
+            "Other Emergency",
+        })
+        incomplete_location = self.submit_report(
+            image=self.png_upload(), latitude="12.34"
+        )
         self.assertEqual(incomplete_location.status_code, 400)
+        self.assertIn(
+            "provided together",
+            incomplete_location.get_json()["message"],
+        )
 
     def test_legacy_database_migration_preserves_reports(self):
         original_database_path = database.DATABASE_PATH
@@ -209,14 +323,41 @@ class EvidencePhotoTests(unittest.TestCase):
     def test_only_authorized_responders_can_retrieve_report_images(self):
         submitted = self.submit_report(image=self.png_upload())
         report_id = submitted.get_json()["report_id"]
+        submitted_video = self.submit_report(
+            video=(io.BytesIO(b"video evidence"), "evidence.webm", "video/webm")
+        )
+        video_report_id = submitted_video.get_json()["report_id"]
 
         anonymous_response = resqnet_app.app.test_client().get(
             f"/api/responder/reports/{report_id}/image"
         )
         self.assertEqual(anonymous_response.status_code, 401)
         self.assertEqual(
+            resqnet_app.app.test_client().get(
+                f"/api/responder/reports/{video_report_id}/video"
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
             self.user_client.get(
                 f"/api/responder/reports/{report_id}/image"
+            ).status_code,
+            403,
+        )
+        user_image_response = self.user_client.get(
+            f"/api/reports/user/{self.user_id}/{report_id}/image"
+        )
+        self.assertEqual(user_image_response.status_code, 200)
+        user_image_response.close()
+        self.assertEqual(
+            self.user_client.get(
+                f"/api/reports/user/{self.user_id + 1}/{report_id}/image"
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.user_client.get(
+                f"/api/responder/reports/{video_report_id}/video"
             ).status_code,
             403,
         )
@@ -254,7 +395,6 @@ class EvidencePhotoTests(unittest.TestCase):
         ).get_json()["reports"]
         report = next(item for item in report_list if item["id"] == report_id)
         self.assertTrue(report["image_attached"])
-        self.assertEqual(report["reported_emergency_type"], "Other")
 
         image_response = responder_client.get(
             f"/api/responder/reports/{report_id}/image"
@@ -266,26 +406,37 @@ class EvidencePhotoTests(unittest.TestCase):
         with Image.open(io.BytesIO(image_response.data)) as saved_image:
             self.assertEqual(saved_image.format, "JPEG")
         image_response.close()
+        video_response = responder_client.get(
+            f"/api/responder/reports/{video_report_id}/video"
+        )
+        self.assertEqual(video_response.status_code, 200)
+        self.assertEqual(video_response.mimetype, "video/webm")
+        video_response.close()
 
     def submit_report(
         self,
         image=None,
+        video=None,
         latitude=None,
         longitude=None,
+        include_location=True,
         description="A building is on fire and smoke is spreading",
-        emergency_type="Other",
     ):
         data = {
             "user_id": str(self.user_id),
-            "emergency_type": emergency_type,
             "description": description,
         }
-        if latitude is not None:
-            data["latitude"] = latitude
-        if longitude is not None:
-            data["longitude"] = longitude
+        if include_location:
+            if latitude is None and longitude is None:
+                latitude, longitude = "12.34", "56.78"
+            if latitude is not None:
+                data["latitude"] = latitude
+            if longitude is not None:
+                data["longitude"] = longitude
         if image is not None:
             data["image"] = image
+        if video is not None:
+            data["video"] = video
         return self.user_client.post(
             "/api/reports/with-image",
             data=data,

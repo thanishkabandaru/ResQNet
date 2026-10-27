@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import ReportMap from "../components/ReportMap.jsx";
 
 const ROUTING_DEPARTMENTS = [
@@ -45,6 +45,28 @@ function formatConfidence(confidence) {
     : "Unavailable";
 }
 
+function formatReportDateTime(timestamp) {
+  const utcTimestamp = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(timestamp)
+    ? `${timestamp.replace(" ", "T")}Z`
+    : timestamp;
+  const date = new Date(utcTimestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "Unavailable";
+  }
+
+  const parts = new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.day} ${values.month} ${values.year}, ${values.hour}:${values.minute} ${values.dayPeriod.toUpperCase()} IST`;
+}
+
 function distanceInKilometres(latitude, longitude, destination) {
   const radians = (degrees) => (degrees * Math.PI) / 180;
   const latitudeDifference = radians(destination.latitude - latitude);
@@ -57,7 +79,32 @@ function distanceInKilometres(latitude, longitude, destination) {
   return 6371.0088 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
-function ResponderDashboard() {
+function statusBadgeClass(status) {
+  return `responder-report-badge status-${status.toLowerCase().replaceAll(" ", "-")}`;
+}
+
+function BreakdownChart({ title, entries }) {
+  const values = Object.entries(entries);
+  const maximum = Math.max(...values.map(([, count]) => count), 1);
+  return (
+    <div className="analytics-breakdown">
+      <h3>{title}</h3>
+      <ul className="analytics-chart-list">
+        {values.map(([label, count]) => (
+          <li key={label} title={`${label}: ${count} reports`}>
+            <span className="analytics-chart-label">{label}</span>
+            <span className="analytics-chart-track" aria-hidden="true">
+              <i style={{ width: `${count ? Math.max(3, count / maximum * 100) : 0}%` }} />
+            </span>
+            <strong>{count}</strong>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ResponderDashboard({ showReports = false }) {
   let user = null;
   try {
     user = JSON.parse(localStorage.getItem("resqnetUser"));
@@ -90,10 +137,12 @@ function ResponderDashboard() {
     );
   }
 
-  return <AuthorizedResponderDashboard user={user} />;
+  return <AuthorizedResponderDashboard user={user} showReports={showReports} />;
 }
 
-function AuthorizedResponderDashboard({ user }) {
+function AuthorizedResponderDashboard({ user, showReports }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [reports, setReports] = useState([]);
   const [loadState, setLoadState] = useState("loading");
   const [updatingReportId, setUpdatingReportId] = useState(null);
@@ -111,6 +160,15 @@ function AuthorizedResponderDashboard({ user }) {
       } else {
         counts.activeReports += 1;
       }
+      if (report.priority === "High") {
+        counts.highPriorityReports += 1;
+      }
+      if (hasValidLocation(report.latitude, report.longitude)) {
+        counts.reportsWithLocation += 1;
+      }
+      if (report.image_attached || report.video_attached) {
+        counts.reportsWithEvidence += 1;
+      }
 
       if (Object.hasOwn(counts.priorities, report.priority)) {
         counts.priorities[report.priority] += 1;
@@ -127,12 +185,23 @@ function AuthorizedResponderDashboard({ user }) {
       totalReports: 0,
       activeReports: 0,
       resolvedReports: 0,
+      highPriorityReports: 0,
+      reportsWithLocation: 0,
+      reportsWithEvidence: 0,
       priorities: { High: 0, Medium: 0, Low: 0 },
       categories: {
         "Medical Emergency": 0,
         Accident: 0,
         Fire: 0,
-        Other: 0,
+        "Road Hazard": 0,
+        Crime: 0,
+        Theft: 0,
+        "Missing Person": 0,
+        "Natural Disaster": 0,
+        "Building Collapse": 0,
+        "Electrical Emergency": 0,
+        "Gas Leak": 0,
+        "Other Emergency": 0,
       },
       statuses: {
         Received: 0,
@@ -155,6 +224,14 @@ function AuthorizedResponderDashboard({ user }) {
         const result = await response.json();
 
         if (!response.ok) {
+          if (response.status === 401) {
+            localStorage.removeItem("resqnetUser");
+            navigate("/login", {
+              replace: true,
+              state: { message: "Your session has expired. Please log in again." },
+            });
+            return;
+          }
           setLoadState("error");
           return;
         }
@@ -185,6 +262,42 @@ function AuthorizedResponderDashboard({ user }) {
     loadReports();
     return () => controller.abort();
   }, [user.id]);
+
+  useEffect(() => {
+    if (!location.hash) {
+      return;
+    }
+    const targetId = location.hash.slice(1);
+    if (!showReports && targetId === "analytics") {
+      const el = document.getElementById("analytics");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      return;
+    }
+    if (showReports && targetId === "department-routing") {
+      const firstDetails = document.querySelector(".responder-report-details");
+      if (firstDetails instanceof HTMLDetailsElement) {
+        firstDetails.open = true;
+      }
+      setTimeout(() => {
+        const el =
+          document.getElementById("department-routing") ||
+          document.querySelector(".department-routing");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 50);
+      return;
+    }
+    if (showReports) {
+      const reportDetails = document.getElementById(targetId);
+      if (reportDetails instanceof HTMLDetailsElement) {
+        reportDetails.open = true;
+        reportDetails.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+  }, [location.hash, reports, showReports]);
 
   async function sendToSelectedLocation(report) {
     const department = selectedDepartments[report.id] || report.route_department;
@@ -312,16 +425,23 @@ function AuthorizedResponderDashboard({ user }) {
     }
   }
 
+  const responderDisplayName =
+    (user?.name && user.name.trim()) || "Responder";
+
   return (
     <main className="page-main content-width">
       <div className="page-heading">
         <span className="eyebrow">Responder workspace</span>
-        <h1>Responder Dashboard</h1>
-        <p>Incoming emergency reports are listed below.</p>
+        <h1>{showReports ? "Emergency Reports" : `Welcome, ${responderDisplayName}`}</h1>
+        <p>
+          {showReports
+            ? "Review reports received from all users."
+            : "Monitor active incidents, intelligence, locations, and response activity."}
+        </p>
       </div>
 
-      {loadState === "loaded" && (
-        <section className="responder-analytics" aria-label="Report analytics">
+      {!showReports && loadState === "loaded" && (
+        <section id="analytics" className="responder-analytics" aria-label="Report analytics">
           <div className="analytics-summary">
             <div className="analytics-metric">
               <span>Total Reports</span>
@@ -335,133 +455,233 @@ function AuthorizedResponderDashboard({ user }) {
               <span>Resolved Reports</span>
               <strong>{analytics.resolvedReports}</strong>
             </div>
+            <div className="analytics-metric">
+              <span>High Priority Reports</span>
+              <strong>{analytics.highPriorityReports}</strong>
+            </div>
+            <div className="analytics-metric">
+              <span>Reports With Location</span>
+              <strong>{analytics.reportsWithLocation}</strong>
+            </div>
+            <div className="analytics-metric">
+              <span>Reports With Evidence</span>
+              <strong>{analytics.reportsWithEvidence}</strong>
+            </div>
           </div>
           <div className="analytics-breakdowns">
-            <div className="analytics-breakdown">
-              <h3>Priority</h3>
-              <dl>
-                {Object.entries(analytics.priorities).map(([priority, count]) => (
-                  <div key={priority}>
-                    <dt>{priority}</dt>
-                    <dd>{count}</dd>
-                  </div>
-                ))}
-              </dl>
+            <BreakdownChart title="Category Overview (12 Categories)" entries={analytics.categories} />
+            <BreakdownChart title="Priority Overview" entries={analytics.priorities} />
+            <BreakdownChart title="Status Overview" entries={analytics.statuses} />
+          </div>
+
+          <div className="dashboard-section recent-incidents-section" style={{ marginTop: "2rem" }}>
+            <div className="section-title-row">
+              <div>
+                <h2>Recent Incidents</h2>
+                <p>Click any incident to inspect report details, routing, and intelligence.</p>
+              </div>
+              <Link className="button button-outline" to="/responder/reports">
+                View All Reports ({reports.length})
+              </Link>
             </div>
-            <div className="analytics-breakdown">
-              <h3>Emergency Categories</h3>
-              <dl>
-                {Object.entries(analytics.categories).map(([category, count]) => (
-                  <div key={category}>
-                    <dt>{category}</dt>
-                    <dd>{count}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-            <div className="analytics-breakdown">
-              <h3>Status</h3>
-              <dl>
-                {Object.entries(analytics.statuses).map(([status, count]) => (
-                  <div key={status}>
-                    <dt>{status}</dt>
-                    <dd>{count}</dd>
-                  </div>
-                ))}
-              </dl>
+            <div className="intelligence-table-wrap">
+              <table className="intelligence-table">
+                <thead>
+                  <tr>
+                    <th>Report #</th>
+                    <th>Category</th>
+                    <th>Priority</th>
+                    <th>Location Availability</th>
+                    <th>Status</th>
+                    <th>Date / Time</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reports.slice(0, 8).map((report) => (
+                    <tr key={report.id}>
+                      <td><strong>#{report.id}</strong></td>
+                      <td>{report.emergency_type}</td>
+                      <td>
+                        <span className={`intelligence-priority-tag priority-${report.priority.toLowerCase()}`}>
+                          {report.priority}
+                        </span>
+                      </td>
+                      <td>
+                        {hasValidLocation(report.latitude, report.longitude)
+                          ? `Lat: ${Number(report.latitude).toFixed(3)}, Lon: ${Number(report.longitude).toFixed(3)}`
+                          : "Not shared"}
+                      </td>
+                      <td>
+                        <span className={statusBadgeClass(report.status)}>
+                          {report.status}
+                        </span>
+                      </td>
+                      <td>{formatReportDateTime(report.created_at)}</td>
+                      <td>
+                        <Link
+                          className="button button-small button-outline"
+                          to={`/responder/reports#report-${report.id}`}
+                        >
+                          View Details
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </section>
       )}
 
-      <section className="dashboard-section">
-        <div className="section-title-row">
-          <div>
-            <h2>Emergency Reports</h2>
-            <p>Review incoming reports and their response status.</p>
-          </div>
+      {!showReports && loadState === "loading" && (
+        <div className="empty-state">
+          <p>Loading emergency reports...</p>
         </div>
-        {loadState === "loading" && (
-          <div className="empty-state">
-            <p>Loading emergency reports...</p>
-          </div>
-        )}
+      )}
 
-        {loadState === "error" && (
-          <div className="empty-state" role="alert">
-            <p>Unable to load emergency reports. Please try again.</p>
-          </div>
-        )}
+      {!showReports && loadState === "error" && (
+        <div className="empty-state" role="alert">
+          <p>Unable to load emergency reports. Please try again.</p>
+        </div>
+      )}
 
-        {loadState === "loaded" && reports.length === 0 && (
-          <div className="empty-state">
-            <span className="empty-icon" aria-hidden="true">—</span>
-            <h3>No Emergency Reports</h3>
-            <p>New emergency reports will appear here when they are received.</p>
+      {showReports && (
+        <section className="dashboard-section responder-reports-section">
+          <div className="section-title-row">
+            <div>
+              <h2>Emergency Reports</h2>
+              <p>Review incoming reports and their response status.</p>
+            </div>
           </div>
-        )}
+          {loadState === "loading" && (
+            <div className="empty-state">
+              <p>Loading emergency reports...</p>
+            </div>
+          )}
 
-        {loadState === "loaded" && reports.length > 0 && (
-          <div>
-            {reports.map((report) => (
-              <article className="form-card report-card" key={report.id}>
-                <h3>Report #{report.id}</h3>
-                <p><strong>Reporter:</strong> {report.reporter_name}</p>
-                {report.reported_emergency_type && (
-                  <p><strong>User-selected type:</strong> {report.reported_emergency_type}</p>
-                )}
-                <p><strong>Emergency Type (ML Classification):</strong> {report.emergency_type}</p>
-                <p><strong>Category confidence:</strong> {formatConfidence(report.category_confidence)}</p>
-                <p><strong>Description:</strong> {report.description}</p>
-                <h4>Evidence Photo</h4>
-                {report.image_attached ? (
-                  <img
-                    className="responder-evidence-photo"
-                    src={`/api/responder/reports/${report.id}/image`}
-                    alt={`Evidence photo for emergency report ${report.id}`}
-                    loading="lazy"
-                  />
-                ) : (
-                  <p>No image attached</p>
-                )}
-                <p><strong>Date/time:</strong> {new Date(report.created_at).toLocaleString()}</p>
-                <p>
-                  <strong>
-                    {report.priority_source === "ml"
-                      ? "Priority (ML Prediction):"
-                      : "Priority (existing/default value):"}
-                  </strong>{" "}
-                  {report.priority}
-                </p>
-                <p><strong>Priority confidence:</strong> {formatConfidence(report.priority_confidence)}</p>
-                <p><strong>Status:</strong> {report.status}</p>
-                <p>
-                  <strong>Location:</strong>{" "}
-                  {hasValidLocation(report.latitude, report.longitude)
-                    ? "Location available"
-                    : "Location unavailable"}
-                </p>
-                <h4>Emergency Location</h4>
-                {hasValidLocation(report.latitude, report.longitude) ? (
-                  <>
-                    <p>Reported location</p>
-                    <ReportMap
-                      latitude={report.latitude}
-                      longitude={report.longitude}
+          {loadState === "error" && (
+            <div className="empty-state" role="alert">
+              <p>Unable to load emergency reports. Please try again.</p>
+            </div>
+          )}
+
+          {loadState === "loaded" && reports.length === 0 && (
+            <div className="empty-state">
+              <span className="empty-icon" aria-hidden="true">—</span>
+              <h3>No Emergency Reports</h3>
+              <p>New emergency reports will appear here when they are received.</p>
+            </div>
+          )}
+
+          {loadState === "loaded" && reports.length > 0 && (
+            <div className="responder-report-list">
+              {reports.map((report) => (
+              <article className="form-card responder-report-card" key={report.id}>
+                <Link
+                  className="button button-outline responder-intelligence-link"
+                  to={`/responder/reports/${report.id}/intelligence`}
+                >
+                  Incident Intelligence
+                </Link>
+                <details
+                  className="responder-report-details"
+                  id={`report-${report.id}`}
+                >
+                  <summary className="responder-report-summary">
+                    <div className="responder-report-summary-main">
+                      <strong>#{report.id}</strong>
+                      <span>{report.emergency_type}</span>
+                      <span>{report.priority}</span>
+                      <span className={statusBadgeClass(report.status)}>{report.status}</span>
+                    </div>
+                    <div className="responder-report-summary-meta">
+                      <span>{report.reporter_name}</span>
+                      <time>{formatReportDateTime(report.created_at)}</time>
+                    </div>
+                    <p className="responder-report-preview">{report.description}</p>
+                  </summary>
+
+                <section className="responder-report-section" aria-label="ML Analysis">
+                  <h4>ML Summary</h4>
+                  <dl className="responder-report-ml">
+                    <div>
+                      <dt>Emergency Category</dt>
+                      <dd>{report.emergency_type}</dd>
+                    </div>
+                    <div>
+                      <dt>Category Confidence</dt>
+                      <dd>{formatConfidence(report.category_confidence)}</dd>
+                    </div>
+                    <div>
+                      <dt>{report.priority_source === "ml" ? "ML Priority" : "Priority (existing/default)"}</dt>
+                      <dd>{report.priority}</dd>
+                    </div>
+                    <div>
+                      <dt>Priority Confidence</dt>
+                      <dd>{formatConfidence(report.priority_confidence)}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="responder-report-section" aria-label="Incident Description">
+                  <h4>Incident Description</h4>
+                  <p className="responder-incident-description">{report.description}</p>
+                </section>
+
+                <section className="responder-report-section" aria-label="Evidence">
+                  <h4>Evidence</h4>
+                  {report.image_attached ? (
+                    <img
+                      className="responder-evidence-photo"
+                      src={`/api/responder/reports/${report.id}/image`}
+                      alt={`Evidence photo for emergency report ${report.id}`}
+                      loading="lazy"
                     />
-                    <a
-                      className="button button-outline"
-                      href={`https://www.google.com/maps?q=${report.latitude},${report.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Open in Google Maps
-                    </a>
-                  </>
-                ) : (
-                  <p>Location unavailable</p>
-                )}
-                <div className="department-routing">
+                  ) : (
+                    <p>No photo attached</p>
+                  )}
+                  {report.video_attached && (
+                    <video
+                      className="responder-evidence-photo"
+                      src={`/api/responder/reports/${report.id}/video`}
+                      controls
+                      preload="metadata"
+                      aria-label={`Evidence video for emergency report ${report.id}`}
+                    />
+                  )}
+                </section>
+
+                <section className="responder-report-section" aria-label="Emergency Location">
+                  <h4>Emergency Location</h4>
+                  {hasValidLocation(report.latitude, report.longitude) ? (
+                    <>
+                      <ReportMap
+                        latitude={report.latitude}
+                        longitude={report.longitude}
+                      />
+                      <a
+                        className="button button-outline"
+                        href={`https://www.google.com/maps?q=${report.latitude},${report.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Open in Google Maps
+                      </a>
+                    </>
+                  ) : (
+                    <p>Location unavailable</p>
+                  )}
+                </section>
+
+                <section
+                  id={report.id === reports[0]?.id ? "department-routing" : undefined}
+                  className="responder-report-section"
+                  aria-label="Department Routing"
+                >
+                  <h4>Department Routing</h4>
+                  <div className="department-routing">
                   <label className="field">
                     <span>Department</span>
                     <select
@@ -570,31 +790,39 @@ function AuthorizedResponderDashboard({ user }) {
                   {routingMessages[report.id] && (
                     <p role="alert">{routingMessages[report.id]}</p>
                   )}
-                </div>
-                {report.status !== "Resolved" && (
-                  <button
-                    className="button button-primary"
-                    type="button"
-                    onClick={() => updateReportStatus(report)}
-                    disabled={updatingReportId === report.id}
-                  >
-                    {updatingReportId === report.id
-                      ? "Updating status..."
-                      : {
-                          Received: "Assign",
-                          Assigned: "Start Response",
-                          "In Progress": "Mark Resolved",
-                        }[report.status]}
-                  </button>
-                )}
-                {statusMessages[report.id] && (
-                  <p role="status">{statusMessages[report.id]}</p>
-                )}
+                  </div>
+                </section>
+
+                <section className="responder-report-section responder-response-status" aria-label="Response Status">
+                  <h4>Response Status</h4>
+                  <p><strong>Current status:</strong> <span className={statusBadgeClass(report.status)}>{report.status}</span></p>
+                  {report.status !== "Resolved" && (
+                    <button
+                      className="button button-primary"
+                      type="button"
+                      onClick={() => updateReportStatus(report)}
+                      disabled={updatingReportId === report.id}
+                    >
+                      {updatingReportId === report.id
+                        ? "Updating status..."
+                        : {
+                            Received: "Assign",
+                            Assigned: "Start Response",
+                            "In Progress": "Mark Resolved",
+                          }[report.status]}
+                    </button>
+                  )}
+                  {statusMessages[report.id] && (
+                    <p role="status">{statusMessages[report.id]}</p>
+                  )}
+                </section>
+                </details>
               </article>
-            ))}
-          </div>
-        )}
-      </section>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </main>
   );
 }

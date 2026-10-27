@@ -9,6 +9,14 @@
   background: #fafcfd;
 }
 
+.evidence-choice {
+  margin: 2px 0 20px;
+}
+
+.evidence-choice > .evidence-photo {
+  margin-top: 8px;
+}
+
 .evidence-photo-heading {
   display: flex;
   flex-wrap: wrap;
